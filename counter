@@ -1,120 +1,103 @@
+import streamlit as st
 import pandas as pd
 import matplotlib.pyplot as plt
-import ipywidgets as widgets
-from IPython.display import display, Javascript
 
 def mm_to_inches(mm_value):
     """Convert millimeters to inches (1 inch = 25.4 mm)."""
     return mm_value / 25.4
 
-# --- 1) Load Data from Google Sheet ---
-# Ensure your Google Sheet is shared publicly.
-url = "https://docs.google.com/spreadsheets/d/15NJIEEk-CX--sNW9vyDl20755RgpuW8AmcSqBac7I4s/export?format=csv"
-data = pd.read_csv(url)
+@st.cache_data
+def load_data():
+    # Replace with your CSV export URL. Make sure your sheet is shared publicly.
+    url = "https://docs.google.com/spreadsheets/d/15NJIEEk-CX--sNW9vyDl20755RgpuW8AmcSqBac7I4s/export?format=csv"
+    data = pd.read_csv(url)
+    return data
 
-# --- 2) Create Widgets ---
+# --- Load the data ---
+data = load_data()
+
+st.title("Counter Drawing Viewer")
+st.markdown("Select a Location from the dropdown below to view the counter drawing and details.")
+
+# --- Create the dropdown ---
 locations = data['Location'].unique()
-dropdown = widgets.Dropdown(
-    options=locations,
-    description='Select Location:',
-    style={'description_width': 'initial'}
+selected_loc = st.selectbox("Select Location:", locations)
+
+# --- Retrieve the selected row ---
+row = data[data['Location'] == selected_loc].iloc[0]
+
+# Extract values (using exact column names from your sheet)
+location = row['Location']
+ahu = row['AHU']
+priority = row['Priority']
+width_mm = row['Width']
+depth_mm = row['Depth']
+finish = row.get('Finish', 'N/A') or 'N/A'
+rolled_width = row.get('Rolled width', 'N/A')
+backsplash = row.get('Backsplash', 'N/A')
+cap_lh = row.get('Cap LH', 'N/A')
+cap_rh = row.get('Cap RH', 'N/A')
+comments = row.get('Comments', '')
+
+# --- Convert dimensions from mm to inches ---
+width_in = mm_to_inches(width_mm)
+depth_in = mm_to_inches(depth_mm)
+
+# --- Create the drawing with Matplotlib ---
+fig, ax = plt.subplots(figsize=(10, 6))
+
+# Draw the rectangle (the counter piece)
+rect = plt.Rectangle((0, 0), width_in, depth_in, fill=False, edgecolor='blue', linewidth=2)
+ax.add_patch(rect)
+
+# Annotate dimensions outside the rectangle:
+# Bottom side (Width)
+ax.annotate("", xy=(0, -0.5), xytext=(width_in, -0.5),
+            arrowprops=dict(arrowstyle="<->", lw=1.5))
+ax.text(width_in/2, -0.7, f"{width_in:.2f} in", ha="center", va="top", fontsize=10)
+
+# Top side (Width)
+ax.annotate("", xy=(0, depth_in+0.5), xytext=(width_in, depth_in+0.5),
+            arrowprops=dict(arrowstyle="<->", lw=1.5))
+ax.text(width_in/2, depth_in+0.7, f"{width_in:.2f} in", ha="center", va="bottom", fontsize=10)
+
+# Left side (Depth)
+ax.annotate("", xy=(-0.5, 0), xytext=(-0.5, depth_in),
+            arrowprops=dict(arrowstyle="<->", lw=1.5))
+ax.text(-0.7, depth_in/2, f"{depth_in:.2f} in", ha="right", va="center", fontsize=10, rotation=90)
+
+# Right side (Depth)
+ax.annotate("", xy=(width_in+0.5, 0), xytext=(width_in+0.5, depth_in),
+            arrowprops=dict(arrowstyle="<->", lw=1.5))
+ax.text(width_in+0.7, depth_in/2, f"{depth_in:.2f} in", ha="left", va="center", fontsize=10, rotation=90)
+
+# --- Additional Information ---
+# Top info inside the piece (Location and AHU)
+top_info_text = f"Location: {location}\nAHU: {ahu}"
+ax.text(width_in/2, depth_in * 0.95, top_info_text, fontsize=10, ha="center", va="top",
+        bbox=dict(facecolor='white', alpha=0.8, edgecolor='none'))
+
+# Bottom info (below the piece)
+bottom_info_text = (
+    f"Priority: {priority}\n"
+    f"Backsplash: {backsplash}\n"
+    f"Cap LH: {cap_lh}\n"
+    f"Cap RH: {cap_rh}\n"
+    f"Rolled width: {rolled_width}\n"
+    f"Finish: {finish}\n"
+    f"Comments: {comments}"
 )
-print_button = widgets.Button(description="Print", button_style='info')
+ax.text(width_in/2, -3.5, bottom_info_text, fontsize=10, ha="center", va="top",
+        bbox=dict(facecolor='white', alpha=0.8, edgecolor='gray'))
 
-# Create an output widget for the drawing and info.
-output = widgets.Output()
+# Set plot limits to ensure everything is visible
+ax.set_xlim(-2, width_in + 2)
+ax.set_ylim(-4, depth_in + 2)
+ax.set_aspect('equal', adjustable='box')
+plt.axis('off')
 
-def update_plot(change):
-    """Clear previous output and display only the selected row's drawing and information."""
-    output.clear_output(wait=True)
-    with output:
-        # Retrieve the row corresponding to the selected location.
-        selected_loc = dropdown.value
-        row = data[data['Location'] == selected_loc].iloc[0]
-        
-        # Extract values using your column names.
-        location = row['Location']
-        ahu = row['AHU']
-        priority = row['Priority']
-        width_mm = row['Width']
-        depth_mm = row['Depth']
-        finish = row.get('Finish', 'N/A') or 'N/A'
-        rolled_width = row.get('Rolled width', 'N/A')
-        backsplash = row.get('Backsplash', 'N/A')
-        cap_lh = row.get('Cap LH', 'N/A')
-        cap_rh = row.get('Cap RH', 'N/A')
-        comments = row.get('Comments', '')
-        
-        # Convert dimensions from mm to inches.
-        width_in = mm_to_inches(width_mm)
-        depth_in = mm_to_inches(depth_mm)
-        
-        # --- Create the Drawing ---
-        fig, ax = plt.subplots(figsize=(10, 6))
-        
-        # Draw the rectangle (piece) with bottom-left corner at (0,0)
-        rect = plt.Rectangle((0, 0), width_in, depth_in, fill=False, edgecolor='blue', linewidth=2)
-        ax.add_patch(rect)
-        
-        # Annotate dimensions outside the rectangle:
-        # Bottom side (Width)
-        ax.annotate("", xy=(0, -0.5), xytext=(width_in, -0.5),
-                    arrowprops=dict(arrowstyle="<->", lw=1.5))
-        ax.text(width_in/2, -0.7, f"{width_in:.2f} in", ha="center", va="top", fontsize=10)
-        
-        # Top side (Width)
-        ax.annotate("", xy=(0, depth_in+0.5), xytext=(width_in, depth_in+0.5),
-                    arrowprops=dict(arrowstyle="<->", lw=1.5))
-        ax.text(width_in/2, depth_in+0.7, f"{width_in:.2f} in", ha="center", va="bottom", fontsize=10)
-        
-        # Left side (Depth)
-        ax.annotate("", xy=(-0.5, 0), xytext=(-0.5, depth_in),
-                    arrowprops=dict(arrowstyle="<->", lw=1.5))
-        ax.text(-0.7, depth_in/2, f"{depth_in:.2f} in", ha="right", va="center", fontsize=10, rotation=90)
-        
-        # Right side (Depth)
-        ax.annotate("", xy=(width_in+0.5, 0), xytext=(width_in+0.5, depth_in),
-                    arrowprops=dict(arrowstyle="<->", lw=1.5))
-        ax.text(width_in+0.7, depth_in/2, f"{depth_in:.2f} in", ha="left", va="center", fontsize=10, rotation=90)
-        
-        # --- Additional Information ---
-        # Top info (inside the rectangle near the top)
-        top_info_text = f"Location: {location}\nAHU: {ahu}"
-        # Placed at 95% of the height of the piece (inside the rectangle), centered horizontally.
-        ax.text(width_in/2, depth_in * 0.95, top_info_text, fontsize=10, ha="center", va="top",
-                bbox=dict(facecolor='white', alpha=0.8, edgecolor='none'))
-        
-        # Bottom info (below the piece)
-        bottom_info_text = (
-            f"Priority: {priority}\n"
-            f"Backsplash: {backsplash}\n"
-            f"Cap LH: {cap_lh}\n"
-            f"Cap RH: {cap_rh}\n"
-            f"Rolled width: {rolled_width}\n"
-            f"Finish: {finish}\n"
-            f"Comments: {comments}"
-        )
-        # Place the bottom info well below the drawing.
-        ax.text(width_in/2, -3.5, bottom_info_text, fontsize=10, ha="center", va="top",
-                bbox=dict(facecolor='white', alpha=0.8, edgecolor='gray'))
-        
-        # Set plot limits to ensure all elements are visible.
-        ax.set_xlim(-2, width_in + 2)
-        ax.set_ylim(-4, depth_in + 2)
-        ax.set_aspect('equal', adjustable='box')
-        plt.axis('off')
-        plt.show()
+# --- Display the drawing in Streamlit ---
+st.pyplot(fig)
 
-def on_print_clicked(b):
-    """Trigger the browser's print dialog."""
-    display(Javascript('window.print();'))
-
-# --- Connect Widgets to Functions ---
-dropdown.observe(update_plot, names='value')
-print_button.on_click(on_print_clicked)
-
-# --- Display the Widgets and Output ---
-display(widgets.HBox([dropdown, print_button]))
-display(output)
-
-#
+# --- Print Instructions ---
+st.info("To print this drawing, please use your browser's print function (e.g., press Ctrl+P or Cmd+P).")
